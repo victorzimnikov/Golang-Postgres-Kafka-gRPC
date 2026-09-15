@@ -29,6 +29,7 @@ func TestServiceCreate(t *testing.T) {
 
 	service := NewService(
 		repository,
+		successfulPublisher(),
 		func() string { return "order-1" },
 		func() time.Time { return createdAt },
 	)
@@ -70,6 +71,7 @@ func TestServiceCreateDoesNotSaveInvalidOrder(t *testing.T) {
 
 	service := NewService(
 		repository,
+		successfulPublisher(),
 		func() string { return "order-1" },
 		time.Now,
 	)
@@ -102,6 +104,7 @@ func TestServiceCreateReturnsRepositoryError(t *testing.T) {
 
 	service := NewService(
 		repository,
+		successfulPublisher(),
 		func() string { return "order-1" },
 		time.Now,
 	)

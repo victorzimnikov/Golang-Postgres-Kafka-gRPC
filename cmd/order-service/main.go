@@ -5,11 +5,14 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/twmb/franz-go/pkg/kgo"
 	orderv1 "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/api/order/v1"
+	kafkamessaging "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/messaging/kafka"
 	domainorder "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/order"
 	postgresstorage "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/storage/postgres"
 	grpctransport "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/transport/grpc"
@@ -28,6 +31,16 @@ func main() {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
+	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers == "" {
+		log.Fatal("KAFKA_BROKERS is not set")
+	}
+
+	kafkaTopic := os.Getenv("KAFKA_ORDER_CREATED_TOPIC")
+	if kafkaTopic == "" {
+		log.Fatal("KAFKA_ORDER_CREATED_TOPIC is not set")
+	}
+
 	connectCtx, cancel := context.WithTimeout(context.Background(), databaseConnectTimeout)
 	defer cancel()
 
@@ -41,6 +54,19 @@ func main() {
 		log.Fatalf("ping PostgreSQL: %v", err)
 	}
 
+	kafkaClient, err := kgo.NewClient(
+		kgo.SeedBrokers(strings.Split(kafkaBrokers, ",")...),
+		kgo.RecordDeliveryTimeout(10*time.Second),
+	)
+	if err != nil {
+		log.Fatalf("create Kafka client: %v", err)
+	}
+	defer kafkaClient.Close()
+
+	if err := kafkaClient.Ping(connectCtx); err != nil {
+		log.Fatalf("ping Kafka: %v", err)
+	}
+
 	listener, err := net.Listen("tcp", grpcAddress)
 	if err != nil {
 		log.Fatalf("listen on %s: %v", grpcAddress, err)
@@ -48,8 +74,14 @@ func main() {
 
 	repository := postgresstorage.NewOrderRepository(pool)
 
+	publisher := kafkamessaging.NewOrderPublisher(
+		kafkaClient,
+		kafkaTopic,
+	)
+
 	orderService := domainorder.NewService(
 		repository,
+		publisher,
 		uuid.NewString,
 		time.Now,
 	)
