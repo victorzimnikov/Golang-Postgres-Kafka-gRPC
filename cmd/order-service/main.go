@@ -1,46 +1,62 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net"
-	"sync/atomic"
+	"os"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	orderv1 "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/api/order/v1"
 	domainorder "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/order"
-	"github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/storage/memory"
+	postgresstorage "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/storage/postgres"
 	grpctransport "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/transport/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
 
-const grpcAddress = ":50051"
+const (
+	grpcAddress            = ":50051"
+	databaseConnectTimeout = 5 * time.Second
+)
 
 func main() {
+	databaseUrl := os.Getenv("DATABASE_URL")
+	if databaseUrl == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+
+	connectCtx, cancel := context.WithTimeout(context.Background(), databaseConnectTimeout)
+	defer cancel()
+
+	pool, err := pgxpool.New(connectCtx, databaseUrl)
+	if err != nil {
+		log.Fatalf("create PostgreSQL connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(connectCtx); err != nil {
+		log.Fatalf("ping PostgreSQL: %v", err)
+	}
+
 	listener, err := net.Listen("tcp", grpcAddress)
 	if err != nil {
 		log.Fatalf("listen on %s: %v", grpcAddress, err)
 	}
 
-	repository := memory.NewOrderRepository()
-
-	var orderCounter atomic.Uint64
+	repository := postgresstorage.NewOrderRepository(pool)
 
 	orderService := domainorder.NewService(
 		repository,
-		func() string {
-			id := orderCounter.Add(1)
-
-			return fmt.Sprintf("order-%d", id)
-		},
+		uuid.NewString,
 		time.Now,
 	)
 
 	orderServer := grpctransport.NewOrderServer(orderService)
 
 	grpcServer := grpc.NewServer()
-
 	orderv1.RegisterOrderServiceServer(grpcServer, orderServer)
 	reflection.Register(grpcServer)
 
