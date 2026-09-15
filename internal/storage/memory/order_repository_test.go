@@ -47,3 +47,50 @@ func TestOrderRepositorySaveReturnsContextError(t *testing.T) {
 		t.Fatalf("Save() error = %v, want %v", err, context.Canceled)
 	}
 }
+
+func TestOrderRepositoryGetByID(t *testing.T) {
+	repository := NewOrderRepository()
+
+	want := domainorder.Order{
+		ID:            "order-1",
+		CustomerID:    "customer-1",
+		AmountKopecks: 10_050,
+		Status:        domainorder.StatusPending,
+	}
+
+	if err := repository.Save(
+		context.Background(),
+		want,
+	); err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+
+	got, err := repository.GetByID(
+		context.Background(),
+		want.ID,
+	)
+	if err != nil {
+		t.Fatalf("GetByID() unexpected error: %v", err)
+	}
+
+	if got != want {
+		t.Errorf("GetByID() = %+v, want %+v", got, want)
+	}
+}
+
+func TestOrderRepositoryGetByIDReturnsNotFound(t *testing.T) {
+	repository := NewOrderRepository()
+
+	_, err := repository.GetByID(
+		context.Background(),
+		"missing-order",
+	)
+
+	if !errors.Is(err, domainorder.ErrOrderNotFound) {
+		t.Fatalf(
+			"GetByID() error = %v, want %v",
+			err,
+			domainorder.ErrOrderNotFound,
+		)
+	}
+}

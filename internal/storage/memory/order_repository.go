@@ -22,7 +22,10 @@ func NewOrderRepository() *OrderRepository {
 	}
 }
 
-func (r *OrderRepository) Save(ctx context.Context, order domainorder.Order) error {
+func (r *OrderRepository) Save(
+	ctx context.Context,
+	order domainorder.Order,
+) error {
 	if err := ctx.Err(); err != nil {
 
 		return err
@@ -38,4 +41,23 @@ func (r *OrderRepository) Save(ctx context.Context, order domainorder.Order) err
 	r.orders[order.ID] = order
 
 	return nil
+}
+
+func (r *OrderRepository) GetByID(
+	ctx context.Context,
+	id string,
+) (domainorder.Order, error) {
+	if err := ctx.Err(); err != nil {
+		return domainorder.Order{}, nil
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	order, exists := r.orders[id]
+	if !exists {
+		return domainorder.Order{}, domainorder.ErrOrderNotFound
+	}
+
+	return order, nil
 }

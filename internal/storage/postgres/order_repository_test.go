@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -63,69 +64,57 @@ func TestOrderRepositorySave(t *testing.T) {
 		t.Fatalf("Save() unexpected error: %v", err)
 	}
 
-	const query = `
-		SELECT
-			id::text,
-			customer_id,
-			amount_kopecks,
-			status,
-			created_at
-		FROM orders
-		WHERE id = $1
-	`
-
-	var (
-		gotID            string
-		gotCustomerID    string
-		gotAmountKopecks int64
-		gotStatus        string
-		gotCreatedAt     time.Time
-	)
-
-	err = tx.QueryRow(ctx, query, want.ID).Scan(
-		&gotID,
-		&gotCustomerID,
-		&gotAmountKopecks,
-		&gotStatus,
-		&gotCreatedAt,
-	)
+	got, err := repository.GetByID(ctx, want.ID)
 	if err != nil {
-		t.Fatalf("query saved order: %v", err)
+		t.Fatalf("GetByID() unexpected error: %v", err)
 	}
 
-	if gotID != want.ID {
-		t.Errorf("ID = %q, want %q", gotID, want.ID)
+	if got.ID != want.ID {
+		t.Errorf("ID = %q, want %q", got.ID, want.ID)
 	}
 
-	if gotCustomerID != want.CustomerID {
+	if got.CustomerID != want.CustomerID {
 		t.Errorf(
 			"CustomerID = %q, want %q",
-			gotCustomerID,
+			got.CustomerID,
 			want.CustomerID,
 		)
 	}
 
-	if gotAmountKopecks != want.AmountKopecks {
+	if got.AmountKopecks != want.AmountKopecks {
 		t.Errorf(
 			"AmountKopecks = %d, want %d",
-			gotAmountKopecks,
+			got.AmountKopecks,
 			want.AmountKopecks,
 		)
 	}
 
-	if gotStatus != string(want.Status) {
+	if got.Status != want.Status {
 		t.Errorf(
 			"Status = %q, want %q",
-			gotStatus,
+			got.Status,
 			want.Status,
 		)
 	}
 
-	if !gotCreatedAt.Equal(want.CreatedAt) {
+	if !got.CreatedAt.Equal(want.CreatedAt) {
 		t.Errorf(
 			"CreatedAt = %v, want %v",
-			gotCreatedAt,
+			got.CreatedAt,
 			want.CreatedAt,
+		)
+	}
+
+	_, err = repository.GetByID(
+		ctx,
+		"00000000-0000-4000-8000-000000000002",
+	)
+
+	if !errors.Is(err, domainorder.ErrOrderNotFound) {
+		t.Fatalf(
+			"GetByID() error = %v, want %v",
+			err,
+			domainorder.ErrOrderNotFound,
 		)
 	}
 }
