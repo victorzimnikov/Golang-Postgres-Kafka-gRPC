@@ -8,11 +8,16 @@ import (
 )
 
 type repositoryStub struct {
-	saveFunc func(ctx context.Context, order Order) error
+	saveFunc    func(ctx context.Context, order Order) error
+	getByIDFunc func(ctx context.Context, id string) (Order, error)
 }
 
 func (r *repositoryStub) Save(ctx context.Context, order Order) error {
 	return r.saveFunc(ctx, order)
+}
+
+func (r *repositoryStub) GetByID(ctx context.Context, id string) (Order, error) {
+	return r.getByIDFunc(ctx, id)
 }
 
 func TestServiceCreate(t *testing.T) {
