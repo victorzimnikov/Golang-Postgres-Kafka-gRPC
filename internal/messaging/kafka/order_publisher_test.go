@@ -83,7 +83,7 @@ func TestOrderPublisherPublishCreated(t *testing.T) {
 		)
 	}
 
-	var event OrderCreatedEvent
+	var event domainorder.OrderCreatedEvent
 
 	if err := json.Unmarshal(record.Value, &event); err != nil {
 		t.Fatalf("unmarshal event: %v", err)
@@ -97,19 +97,19 @@ func TestOrderPublisherPublishCreated(t *testing.T) {
 		)
 	}
 
-	if event.EventType != OrderCreatedEventType {
+	if event.EventType != domainorder.OrderCreatedEventType {
 		t.Errorf(
 			"EventType = %q, want %q",
 			event.EventType,
-			OrderCreatedEventType,
+			domainorder.OrderCreatedEventType,
 		)
 	}
 
-	if event.EventVersion != OrderCreatedEventVersion {
+	if event.EventVersion != domainorder.OrderCreatedEventVersion {
 		t.Errorf(
 			"EventVersion = %d, want %d",
 			event.EventVersion,
-			OrderCreatedEventVersion,
+			domainorder.OrderCreatedEventVersion,
 		)
 	}
 
