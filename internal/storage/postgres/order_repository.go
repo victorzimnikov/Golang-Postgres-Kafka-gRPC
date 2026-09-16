@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -16,6 +17,7 @@ type DBTX interface {
 		sql string,
 		arguments ...any,
 	) (pgconn.CommandTag, error)
+	Begin(ctx context.Context) (pgx.Tx, error)
 	QueryRow(
 		ctx context.Context,
 		sql string,
@@ -33,11 +35,26 @@ func NewOrderRepository(db DBTX) *OrderRepository {
 	}
 }
 
-func (r *OrderRepository) Save(
+func (r *OrderRepository) SaveWithEvent(
 	ctx context.Context,
 	order domainorder.Order,
+	event domainorder.OrderCreatedEvent,
 ) error {
-	const query = `
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal event created event: %w", err)
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	const insertOrderQuery = `
 		INSERT INTO orders (
 			id,
 			customer_id,
@@ -48,18 +65,49 @@ func (r *OrderRepository) Save(
 		VALUES ($1, $2, $3, $4, $5)
 	`
 
-	_, err := r.db.Exec(
+	_, err = tx.Exec(
 		ctx,
-		query,
+		insertOrderQuery,
 		order.ID,
 		order.CustomerID,
 		order.AmountKopecks,
 		order.Status,
 		order.CreatedAt,
 	)
-
 	if err != nil {
 		return fmt.Errorf("insert order: %w", err)
+	}
+
+	const insertEventQuery = `
+		INSERT INTO outbox_events (
+			id,
+			aggregate_type,
+			aggregate_id,
+			event_type,
+			event_version,
+			payload,
+			occurred_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`
+
+	_, err = tx.Exec(
+		ctx,
+		insertEventQuery,
+		event.EventID,
+		"order",
+		order.ID,
+		event.EventType,
+		event.EventVersion,
+		payload,
+		event.OccurredAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert outbox event: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return nil

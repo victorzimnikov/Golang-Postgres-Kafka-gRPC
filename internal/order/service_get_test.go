@@ -40,7 +40,6 @@ func TestServiceGetByID(t *testing.T) {
 
 	service := NewService(
 		repository,
-		successfulPublisher(),
 		func() string {
 			return "unused"
 		},
@@ -76,7 +75,6 @@ func TestServiceGetByIDRejectsEmptyID(t *testing.T) {
 
 	service := NewService(
 		repository,
-		successfulPublisher(),
 		func() string {
 			return "unused"
 		},
@@ -113,7 +111,6 @@ func TestServiceGetByIDReturnsNotFound(t *testing.T) {
 
 	service := NewService(
 		repository,
-		successfulPublisher(),
 		func() string {
 			return "unused"
 		},

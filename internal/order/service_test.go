@@ -8,12 +8,20 @@ import (
 )
 
 type repositoryStub struct {
-	saveFunc    func(ctx context.Context, order Order) error
+	saveWithEventFunc func(
+		ctx context.Context,
+		order Order,
+		event OrderCreatedEvent,
+	) error
 	getByIDFunc func(ctx context.Context, id string) (Order, error)
 }
 
-func (r *repositoryStub) Save(ctx context.Context, order Order) error {
-	return r.saveFunc(ctx, order)
+func (r *repositoryStub) SaveWithEvent(
+	ctx context.Context,
+	order Order,
+	event OrderCreatedEvent,
+) error {
+	return r.saveWithEventFunc(ctx, order, event)
 }
 
 func (r *repositoryStub) GetByID(ctx context.Context, id string) (Order, error) {
@@ -23,18 +31,25 @@ func (r *repositoryStub) GetByID(ctx context.Context, id string) (Order, error) 
 func TestServiceCreate(t *testing.T) {
 	createdAt := time.Date(2026, time.September, 15, 12, 0, 0, 0, time.UTC)
 
-	var savedOrder Order
+	var (
+		savedOrder Order
+		savedEvent OrderCreatedEvent
+	)
 
 	repository := &repositoryStub{
-		saveFunc: func(_ context.Context, order Order) error {
+		saveWithEventFunc: func(
+			_ context.Context,
+			order Order,
+			event OrderCreatedEvent,
+		) error {
 			savedOrder = order
+			savedEvent = event
 			return nil
 		},
 	}
 
 	service := NewService(
 		repository,
-		successfulPublisher(),
 		func() string { return "order-1" },
 		func() time.Time { return createdAt },
 	)
@@ -46,6 +61,16 @@ func TestServiceCreate(t *testing.T) {
 			AmountKopecks: 10_500,
 		},
 	)
+
+	wantEvent := NewOrderCreatedEvent(got)
+
+	if savedEvent != wantEvent {
+		t.Errorf(
+			"saved event = %+v, want %+v",
+			savedEvent,
+			wantEvent,
+		)
+	}
 
 	if err != nil {
 		t.Fatalf("Create() unexpected error: %v", err)
@@ -68,7 +93,11 @@ func TestServiceCreateDoesNotSaveInvalidOrder(t *testing.T) {
 	saveCalled := false
 
 	repository := &repositoryStub{
-		saveFunc: func(_ context.Context, order Order) error {
+		saveWithEventFunc: func(
+			_ context.Context,
+			order Order,
+			_event OrderCreatedEvent,
+		) error {
 			saveCalled = true
 			return nil
 		},
@@ -76,7 +105,6 @@ func TestServiceCreateDoesNotSaveInvalidOrder(t *testing.T) {
 
 	service := NewService(
 		repository,
-		successfulPublisher(),
 		func() string { return "order-1" },
 		time.Now,
 	)
@@ -102,14 +130,17 @@ func TestServiceCreateReturnsRepositoryError(t *testing.T) {
 	repositoryErr := errors.New("repository unavailable")
 
 	repository := &repositoryStub{
-		saveFunc: func(ctx context.Context, order Order) error {
+		saveWithEventFunc: func(
+			ctx context.Context,
+			order Order,
+			_event OrderCreatedEvent,
+		) error {
 			return repositoryErr
 		},
 	}
 
 	service := NewService(
 		repository,
-		successfulPublisher(),
 		func() string { return "order-1" },
 		time.Now,
 	)

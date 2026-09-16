@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -11,7 +12,7 @@ import (
 	domainorder "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/order"
 )
 
-func TestOrderRepositorySave(t *testing.T) {
+func TestOrderRepositorySaveWithEvent(t *testing.T) {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("DATABASE_URL is not set")
@@ -33,13 +34,18 @@ func TestOrderRepositorySave(t *testing.T) {
 		t.Fatalf("ping database: %v", err)
 	}
 
+	// Внешняя транзакция изолирует тест:
+	// все его данные будут удалены через Rollback.
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		t.Fatalf("begin transaction: %v", err)
+		t.Fatalf("begin test transaction: %v", err)
 	}
+
 	t.Cleanup(func() {
 		_ = tx.Rollback(context.Background())
 	})
+
+	repository := NewOrderRepository(tx)
 
 	want := domainorder.Order{
 		ID:            "00000000-0000-4000-8000-000000000001",
@@ -58,10 +64,14 @@ func TestOrderRepositorySave(t *testing.T) {
 		),
 	}
 
-	repository := NewOrderRepository(tx)
+	wantEvent := domainorder.NewOrderCreatedEvent(want)
 
-	if err := repository.Save(ctx, want); err != nil {
-		t.Fatalf("Save() unexpected error: %v", err)
+	if err := repository.SaveWithEvent(
+		ctx,
+		want,
+		wantEvent,
+	); err != nil {
+		t.Fatalf("SaveWithEvent() unexpected error: %v", err)
 	}
 
 	got, err := repository.GetByID(ctx, want.ID)
@@ -105,14 +115,64 @@ func TestOrderRepositorySave(t *testing.T) {
 		)
 	}
 
-	_, err = repository.GetByID(
+	var payload []byte
+
+	err = tx.QueryRow(
 		ctx,
-		"00000000-0000-4000-8000-000000000002",
+		`
+			SELECT payload
+			FROM outbox_events
+			WHERE id = $1
+		`,
+		wantEvent.EventID,
+	).Scan(&payload)
+	if err != nil {
+		t.Fatalf("select outbox event: %v", err)
+	}
+
+	var gotEvent domainorder.OrderCreatedEvent
+
+	if err := json.Unmarshal(payload, &gotEvent); err != nil {
+		t.Fatalf("unmarshal outbox event: %v", err)
+	}
+
+	if gotEvent != wantEvent {
+		t.Errorf(
+			"outbox event = %+v, want %+v",
+			gotEvent,
+			wantEvent,
+		)
+	}
+
+	// Проверяем атомарность. Сначала будет вставлен заказ,
+	// затем вставка события завершится ошибкой из-за версии 0.
+	rollbackOrder := domainorder.Order{
+		ID:            "00000000-0000-4000-8000-000000000002",
+		CustomerID:    "customer-2",
+		AmountKopecks: 20_000,
+		Status:        domainorder.StatusPending,
+		CreatedAt:     want.CreatedAt,
+	}
+
+	invalidEvent := domainorder.NewOrderCreatedEvent(rollbackOrder)
+	invalidEvent.EventVersion = 0
+
+	err = repository.SaveWithEvent(
+		ctx,
+		rollbackOrder,
+		invalidEvent,
 	)
+	if err == nil {
+		t.Fatal("SaveWithEvent() expected outbox insert error")
+	}
+
+	// Если транзакция работает правильно, вставленный перед ошибкой
+	// заказ также должен быть отменён.
+	_, err = repository.GetByID(ctx, rollbackOrder.ID)
 
 	if !errors.Is(err, domainorder.ErrOrderNotFound) {
 		t.Fatalf(
-			"GetByID() error = %v, want %v",
+			"GetByID() after rollback error = %v, want %v",
 			err,
 			domainorder.ErrOrderNotFound,
 		)

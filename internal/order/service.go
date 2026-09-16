@@ -7,12 +7,12 @@ import (
 )
 
 type Repository interface {
-	Save(context context.Context, order Order) error
+	SaveWithEvent(
+		context context.Context,
+		order Order,
+		event OrderCreatedEvent,
+	) error
 	GetByID(context context.Context, id string) (Order, error)
-}
-
-type EventPublisher interface {
-	PublishCreated(ctx context.Context, order Order) error
 }
 
 type IDGenerator func() string
@@ -26,19 +26,16 @@ type CreateInput struct {
 
 type Service struct {
 	repository Repository
-	publisher  EventPublisher
 	generateID IDGenerator
 	now        Clock
 }
 
 func NewService(
 	repository Repository,
-	publisher EventPublisher,
 	generateID IDGenerator,
 	now Clock) *Service {
 	return &Service{
 		repository: repository,
-		publisher:  publisher,
 		generateID: generateID,
 		now:        now,
 	}
@@ -54,12 +51,10 @@ func (s *Service) Create(
 		return Order{}, err
 	}
 
-	if err := s.repository.Save(ctx, order); err != nil {
-		return Order{}, fmt.Errorf("save order: %w", err)
-	}
+	event := NewOrderCreatedEvent(order)
 
-	if err := s.publisher.PublishCreated(ctx, order); err != nil {
-		return Order{}, fmt.Errorf("publish order created event: %w", err)
+	if err := s.repository.SaveWithEvent(ctx, order, event); err != nil {
+		return Order{}, fmt.Errorf("save order: %w", err)
 	}
 
 	return order, nil

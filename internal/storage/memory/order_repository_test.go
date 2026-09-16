@@ -15,11 +15,33 @@ func TestOrderRepositorySave(t *testing.T) {
 		ID: "order-1",
 	}
 
-	if err := repository.Save(context.Background(), order); err != nil {
+	if err := repository.SaveWithEvent(
+		context.Background(),
+		order,
+		domainorder.NewOrderCreatedEvent(order),
+	); err != nil {
 		t.Fatalf("first Save() unexpected error: %v", err)
 	}
 
-	err := repository.Save(context.Background(), order)
+	savedEvent, exists := repository.events[order.ID]
+	if !exists {
+		t.Fatal("created event was not saved")
+	}
+
+	wantEvent := domainorder.NewOrderCreatedEvent(order)
+	if savedEvent != wantEvent {
+		t.Errorf(
+			"saved event: %+v, want %+v",
+			savedEvent,
+			wantEvent,
+		)
+	}
+
+	err := repository.SaveWithEvent(
+		context.Background(),
+		order,
+		domainorder.NewOrderCreatedEvent((order)),
+	)
 
 	if !errors.Is(err, ErrOrderAlreadyExists) {
 		t.Fatalf(
@@ -36,11 +58,14 @@ func TestOrderRepositorySaveReturnsContextError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := repository.Save(
+	order := domainorder.Order{
+		ID: "order-1",
+	}
+
+	err := repository.SaveWithEvent(
 		ctx,
-		domainorder.Order{
-			ID: "order-1",
-		},
+		order,
+		domainorder.NewOrderCreatedEvent(order),
 	)
 
 	if !errors.Is(err, context.Canceled) {
@@ -58,9 +83,10 @@ func TestOrderRepositoryGetByID(t *testing.T) {
 		Status:        domainorder.StatusPending,
 	}
 
-	if err := repository.Save(
+	if err := repository.SaveWithEvent(
 		context.Background(),
 		want,
+		domainorder.NewOrderCreatedEvent(want),
 	); err != nil {
 		t.Fatalf("Save() unexpected error: %v", err)
 	}
