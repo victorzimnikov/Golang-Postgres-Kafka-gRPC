@@ -11,28 +11,32 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type OrderCreator interface {
+type OrderService interface {
 	Create(ctx context.Context, input domainorder.CreateInput) (domainorder.Order, error)
+	GetByID(ctx context.Context, id string) (domainorder.Order, error)
 }
 
 type OrderServer struct {
 	orderv1.UnimplementedOrderServiceServer
 
-	orderCreator OrderCreator
+	orderService OrderService
 }
 
-func NewOrderServer(orderCreator OrderCreator) *OrderServer {
+func NewOrderServer(orderService OrderService) *OrderServer {
 	return &OrderServer{
-		orderCreator: orderCreator,
+		orderService: orderService,
 	}
 }
 
-func (s *OrderServer) CreateOrder(ctx context.Context, request *orderv1.CreateOrderRequest) (*orderv1.CreateOrderResponse, error) {
+func (s *OrderServer) CreateOrder(
+	ctx context.Context,
+	request *orderv1.CreateOrderRequest,
+) (*orderv1.CreateOrderResponse, error) {
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "request os required")
 	}
 
-	createdOrder, err := s.orderCreator.Create(
+	createdOrder, err := s.orderService.Create(
 		ctx,
 		domainorder.CreateInput{
 			CustomerID:    request.GetCustomerId(),
@@ -45,13 +49,25 @@ func (s *OrderServer) CreateOrder(ctx context.Context, request *orderv1.CreateOr
 	}
 
 	return &orderv1.CreateOrderResponse{
-		Order: &orderv1.Order{
-			Id:            createdOrder.ID,
-			CustomerId:    createdOrder.CustomerID,
-			AmountKopecks: createdOrder.AmountKopecks,
-			Status:        mapOrderStatus(createdOrder.Status),
-			CreatedAt:     timestamppb.New(createdOrder.CreatedAt),
-		},
+		Order: mapOrderToProto(createdOrder),
+	}, nil
+}
+
+func (s *OrderServer) GetOrder(
+	ctx context.Context,
+	request *orderv1.GetOrderRequest,
+) (*orderv1.GetOrderResponse, error) {
+	if request == nil {
+		return nil, status.Error(codes.InvalidArgument, "request required")
+	}
+
+	order, err := s.orderService.GetByID(ctx, request.GetId())
+	if err != nil {
+		return nil, mapOrderError(err)
+	}
+
+	return &orderv1.GetOrderResponse{
+		Order: mapOrderToProto(order),
 	}, nil
 }
 
@@ -67,6 +83,9 @@ func mapOrderStatus(value domainorder.Status) orderv1.OrderStatus {
 
 func mapOrderError(err error) error {
 	switch {
+	case errors.Is(err, domainorder.ErrOrderNotFound):
+		return status.Error(codes.NotFound, err.Error())
+
 	case errors.Is(err, domainorder.ErrIDRequired),
 		errors.Is(err, domainorder.ErrCustomerIDRequired),
 		errors.Is(err, domainorder.ErrAmountNotPositive):
@@ -74,5 +93,15 @@ func mapOrderError(err error) error {
 
 	default:
 		return status.Error(codes.Internal, "internal server error")
+	}
+}
+
+func mapOrderToProto(order domainorder.Order) *orderv1.Order {
+	return &orderv1.Order{
+		Id:            order.ID,
+		CustomerId:    order.CustomerID,
+		AmountKopecks: order.AmountKopecks,
+		Status:        mapOrderStatus(order.Status),
+		CreatedAt:     timestamppb.New(order.CreatedAt),
 	}
 }

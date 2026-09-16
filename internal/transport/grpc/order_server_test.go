@@ -17,6 +17,10 @@ type orderCreatorStub struct {
 		ctx context.Context,
 		input domainorder.CreateInput,
 	) (domainorder.Order, error)
+	getByIDFunc func(
+		ctx context.Context,
+		id string,
+	) (domainorder.Order, error)
 }
 
 func (s *orderCreatorStub) Create(
@@ -24,6 +28,13 @@ func (s *orderCreatorStub) Create(
 	input domainorder.CreateInput,
 ) (domainorder.Order, error) {
 	return s.createFunc(ctx, input)
+}
+
+func (s *orderCreatorStub) GetByID(
+	ctx context.Context,
+	id string,
+) (domainorder.Order, error) {
+	return s.getByIDFunc(ctx, id)
 }
 
 func TestOrderServerCreateOrder(t *testing.T) {
@@ -164,6 +175,97 @@ func TestOrderServerCreateOrderHidesInternalError(t *testing.T) {
 			"error message = %q, want %q",
 			status.Convert(err).Message(),
 			"internal server error",
+		)
+	}
+}
+
+func TestOrderServerGetOrder(t *testing.T) {
+	createdAt := time.Date(
+		2026,
+		time.September,
+		15,
+		12,
+		0,
+		0,
+		0,
+		time.UTC,
+	)
+
+	orderService := &orderCreatorStub{
+		getByIDFunc: func(
+			_ context.Context,
+			id string,
+		) (domainorder.Order, error) {
+			return domainorder.Order{
+				ID:            id,
+				CustomerID:    "customer-1",
+				AmountKopecks: 10_050,
+				Status:        domainorder.StatusPending,
+				CreatedAt:     createdAt,
+			}, nil
+		},
+	}
+
+	server := NewOrderServer(orderService)
+
+	response, err := server.GetOrder(
+		context.Background(),
+		&orderv1.GetOrderRequest{
+			Id: "00000000-0000-4000-8000-000000000001",
+		},
+	)
+	if err != nil {
+		t.Fatalf("GetOrder() unexpected error: %v", err)
+	}
+
+	got := response.GetOrder()
+
+	if got.GetId() != "00000000-0000-4000-8000-000000000001" {
+		t.Errorf("ID = %q", got.GetId())
+	}
+
+	if got.GetCustomerId() != "customer-1" {
+		t.Errorf(
+			"CustomerID = %q, want %q",
+			got.GetCustomerId(),
+			"customer-1",
+		)
+	}
+
+	if got.GetStatus() != orderv1.OrderStatus_ORDER_STATUS_PENDING {
+		t.Errorf(
+			"Status = %v, want %v",
+			got.GetStatus(),
+			orderv1.OrderStatus_ORDER_STATUS_PENDING,
+		)
+	}
+}
+
+func TestOrderServerGetOrderMapsNotFound(t *testing.T) {
+	orderService := &orderCreatorStub{
+		getByIDFunc: func(
+			_ context.Context,
+			_ string,
+		) (domainorder.Order, error) {
+			return domainorder.Order{},
+				domainorder.ErrOrderNotFound
+		},
+	}
+
+	server := NewOrderServer(orderService)
+
+	_, err := server.GetOrder(
+		context.Background(),
+		&orderv1.GetOrderRequest{
+			Id: "00000000-0000-4000-8000-000000000099",
+		},
+	)
+
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf(
+			"error code = %v, want %v",
+			status.Code(err),
+			codes.NotFound,
 		)
 	}
 }
