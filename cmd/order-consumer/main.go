@@ -10,11 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/inbox"
 	kafkamessaging "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/messaging/kafka"
+	postgresstorage "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/storage/postgres"
 )
 
-const kafkaConnectTimeout = 10 * time.Second
+const startupTimeout = 10 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -23,6 +26,11 @@ func main() {
 }
 
 func run() error {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		return fmt.Errorf("DATABASE_URL is not set")
+	}
+
 	brokersValue := os.Getenv("KAFKA_BROKERS")
 	if brokersValue == "" {
 		return fmt.Errorf("KAFKA_BROKERS is not set")
@@ -45,6 +53,19 @@ func run() error {
 	)
 	defer stop()
 
+	startupCtx, cancelStartup := context.WithTimeout(ctx, startupTimeout)
+	defer cancelStartup()
+
+	pool, err := pgxpool.New(startupCtx, databaseURL)
+	if err != nil {
+		return fmt.Errorf("create PostgreSQL connection pool: %w", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(startupCtx); err != nil {
+		return fmt.Errorf("ping PostgreSQL: %w", err)
+	}
+
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(strings.Split(brokersValue, ",")...),
 		kgo.ConsumeTopics(topic),
@@ -58,16 +79,14 @@ func run() error {
 	}
 	defer client.CloseAllowingRebalance()
 
-	pingCtx, cancelPing := context.WithTimeout(
-		ctx,
-		kafkaConnectTimeout,
-	)
-	err = client.Ping(pingCtx)
-	cancelPing()
-
+	err = client.Ping(startupCtx)
 	if err != nil {
 		return fmt.Errorf("ping Kafka: %w", err)
 	}
+
+	cancelStartup()
+
+	processedEvents := postgresstorage.NewProcessedEventRepository(pool)
 
 	log.Printf(
 		"consumer started: topic=%s group=%s",
@@ -97,7 +116,7 @@ func run() error {
 		}
 
 		for _, record := range fetches.Records() {
-			if err := handleRecord(record); err != nil {
+			if _, err := handleRecord(ctx, group, processedEvents, record); err != nil {
 				client.AllowRebalance()
 
 				return fmt.Errorf(
@@ -130,18 +149,53 @@ func run() error {
 	}
 }
 
-func handleRecord(record *kgo.Record) error {
+func handleRecord(
+	ctx context.Context,
+	consumerGroup string,
+	processedEvents inbox.Repository,
+	record *kgo.Record,
+) (bool, error) {
 	event, err := kafkamessaging.DecodeOrderCreated(record.Value)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if string(record.Key) != event.OrderID {
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			"record key %q does not mach order ID %q",
 			record.Key,
 			event.OrderID,
 		)
+	}
+
+	firstProcessing, err := processedEvents.TryMarkProcessed(
+		ctx,
+		inbox.Message{
+			ConsumerGroup: consumerGroup,
+			EventID:       event.EventID,
+			Topic:         record.Topic,
+			Partition:     record.Partition,
+			Offset:        record.Offset,
+		},
+	)
+	if err != nil {
+		return false, fmt.Errorf(
+			"mark event %s processed: %w",
+			event.EventID,
+			err,
+		)
+	}
+
+	if !firstProcessing {
+		log.Printf(
+			"duplicate event skipped: event_id=%s topic=%s partition=%d offset=%d",
+			event.EventID,
+			record.Topic,
+			record.Partition,
+			record.Offset,
+		)
+
+		return false, nil
 	}
 
 	log.Printf(
@@ -153,5 +207,5 @@ func handleRecord(record *kgo.Record) error {
 		record.Offset,
 	)
 
-	return nil
+	return true, nil
 }
