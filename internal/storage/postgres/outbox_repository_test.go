@@ -91,7 +91,7 @@ func TestOutboxRepositoryProcessNext(t *testing.T) {
 
 	var handled outbox.Event
 
-	processed, err := repository.ProcessNext(
+	found, err := repository.ProcessNext(
 		ctx,
 		func(_ context.Context, event outbox.Event) error {
 			handled = event
@@ -102,7 +102,7 @@ func TestOutboxRepositoryProcessNext(t *testing.T) {
 		t.Fatalf("ProcessNext() unexpected error: %v", err)
 	}
 
-	if !processed {
+	if !found {
 		t.Fatal("ProcessNext() processed = false, want true")
 	}
 
@@ -231,14 +231,14 @@ func TestOutboxRepositoryRecordsHandlerError(t *testing.T) {
 	repository := NewOutboxRepository(tx)
 	handlerErr := errors.New("Kafka unavailable")
 
-	processed, err := repository.ProcessNext(
+	found, err := repository.ProcessNext(
 		ctx,
 		func(context.Context, outbox.Event) error {
 			return handlerErr
 		},
 	)
 
-	if !processed {
+	if !found {
 		t.Fatal("ProcessNext() processed = false, want true")
 	}
 

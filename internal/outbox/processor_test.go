@@ -74,12 +74,12 @@ func TestProcessorProcessNext(t *testing.T) {
 
 	processor := NewProcessor(repository, publisher)
 
-	processed, err := processor.ProcessNext(context.Background())
+	found, err := processor.ProcessNext(context.Background())
 	if err != nil {
 		t.Fatalf("ProcessNext() unexpected error: %v", err)
 	}
 
-	if !processed {
+	if !found {
 		t.Fatal("ProcessNext() processed = false, want true")
 	}
 
@@ -129,9 +129,9 @@ func TestProcessorProcessNextReturnsPublisherError(t *testing.T) {
 
 	processor := NewProcessor(repository, publisher)
 
-	processed, err := processor.ProcessNext(context.Background())
+	found, err := processor.ProcessNext(context.Background())
 
-	if !processed {
+	if !found {
 		t.Fatal("ProcessNext() processed = false, want true")
 	}
 
@@ -150,12 +150,12 @@ func TestProcessorProcessNextReturnsFalseWhenEmpty(t *testing.T) {
 
 	processor := NewProcessor(repository, publisher)
 
-	processed, err := processor.ProcessNext(context.Background())
+	found, err := processor.ProcessNext(context.Background())
 	if err != nil {
 		t.Fatalf("ProcessNext() unexpected error: %v", err)
 	}
 
-	if processed {
+	if found {
 		t.Fatal("ProcessNext() processed = true, want false")
 	}
 

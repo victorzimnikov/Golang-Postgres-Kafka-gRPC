@@ -50,7 +50,7 @@ func NewProcessor(
 }
 
 func (p *Processor) ProcessNext(ctx context.Context) (bool, error) {
-	processed, err := p.repository.ProcessNext(
+	found, err := p.repository.ProcessNext(
 		ctx,
 		func(ctx context.Context, event Event) error {
 			err := p.publisher.Publish(
@@ -71,11 +71,11 @@ func (p *Processor) ProcessNext(ctx context.Context) (bool, error) {
 		},
 	)
 	if err != nil {
-		return processed, fmt.Errorf(
+		return found, fmt.Errorf(
 			"process next outbox event: %w",
 			err,
 		)
 	}
 
-	return processed, nil
+	return found, nil
 }
