@@ -70,7 +70,7 @@ func run() error {
 		kgo.SeedBrokers(strings.Split(brokersValue, ",")...),
 		kgo.ConsumeTopics(topic),
 		kgo.ConsumerGroup(group),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
 	)
