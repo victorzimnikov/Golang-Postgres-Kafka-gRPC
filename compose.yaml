@@ -1,3 +1,9 @@
+x-go-service: &go-service
+  build:
+    context: .
+  image: pg-grpc-kafka-app:dev
+  restart: unless-stopped
+
 services:
   postgres:
     container_name: go-pg-grpc-kafka_postgres
@@ -37,7 +43,6 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
 
-
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
@@ -59,6 +64,48 @@ services:
       timeout: 10s
       retries: 10
       start_period: 20s
+
+  order-service:
+    <<: *go-service
+    command:
+      - /app/order-service
+    environment:
+      GRPC_PORT: "50051"
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+    ports:
+      - "${GRPC_HOST_PORT:-50051}:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  outbox-worker:
+    <<: *go-service
+    command:
+      - /app/outbox-worker
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      KAFKA_BROKERS: "kafka:19092"
+      KAFKA_ORDER_CREATED_TOPIC: ${KAFKA_ORDER_CREATED_TOPIC}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  order-consumer:
+    <<: *go-service
+    command:
+      - /app/order-consumer
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      KAFKA_BROKERS: "kafka:19092"
+      KAFKA_ORDER_CREATED_TOPIC: ${KAFKA_ORDER_CREATED_TOPIC}
+      KAFKA_CONSUMER_GROUP: ${KAFKA_CONSUMER_GROUP}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
 
 volumes:
   postgres_data:

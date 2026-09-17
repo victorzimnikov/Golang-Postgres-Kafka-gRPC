@@ -18,11 +18,17 @@ import (
 )
 
 const (
-	grpcAddress            = ":50051"
 	databaseConnectTimeout = 5 * time.Second
 )
 
 func main() {
+	grpcPort := os.Getenv("GRPC_PORT")
+	if grpcPort == "" {
+		log.Fatal("GRPC_PORT is not set")
+	}
+
+	grpcAddress := ":" + grpcPort
+
 	databaseUrl := os.Getenv("DATABASE_URL")
 	if databaseUrl == "" {
 		log.Fatal("DATABASE_URL is not set")
