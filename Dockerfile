@@ -1,4 +1,6 @@
-FROM golang:1.26.3-alpine3.23 AS builder
+FROM golang:1.26.8-alpine3.23 AS builder
+
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /src
 
@@ -27,14 +29,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/order-consumer \
     ./cmd/order-consumer
 
-FROM alpine:3.23
-
-RUN apk add --no-cache ca-certificates \
-    && addgroup -S app \
-    && adduser -S -G app app
+FROM scratch
 
 WORKDIR /app
 
-COPY --from=builder --chown=app:app /out/ /app/
+COPY --from=builder \
+    /etc/ssl/certs/ca-certificates.crt \
+    /etc/ssl/certs/ca-certificates.crt
 
-USER app
+COPY --from=builder --chown=65532:65532 /out/ /app/
+
+USER 65532:65532
