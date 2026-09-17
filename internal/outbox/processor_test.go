@@ -25,23 +25,20 @@ func (s *repositoryStub) ProcessNext(
 }
 
 type publisherStub struct {
-	key        string
-	value      []byte
-	occurredAt time.Time
-	err        error
-	called     bool
+	key    string
+	value  []byte
+	err    error
+	called bool
 }
 
 func (s *publisherStub) Publish(
 	_ context.Context,
 	key string,
 	value []byte,
-	occurredAt time.Time,
 ) error {
 	s.called = true
 	s.key = key
 	s.value = value
-	s.occurredAt = occurredAt
 
 	return s.err
 }
@@ -100,14 +97,6 @@ func TestProcessorProcessNext(t *testing.T) {
 			"publisher value = %s, want %s",
 			publisher.value,
 			event.Payload,
-		)
-	}
-
-	if !publisher.occurredAt.Equal(event.OccurredAt) {
-		t.Errorf(
-			"publisher occurredAt = %v, want %v",
-			publisher.occurredAt,
-			event.OccurredAt,
 		)
 	}
 }

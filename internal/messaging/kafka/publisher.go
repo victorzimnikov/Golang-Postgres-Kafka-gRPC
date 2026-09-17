@@ -3,7 +3,6 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -34,13 +33,11 @@ func (p *Publisher) Publish(
 	ctx context.Context,
 	key string,
 	value []byte,
-	occurredAt time.Time,
 ) error {
 	record := &kgo.Record{
-		Topic:     p.topic,
-		Key:       []byte(key),
-		Value:     value,
-		Timestamp: occurredAt,
+		Topic: p.topic,
+		Key:   []byte(key),
+		Value: value,
 	}
 
 	if err := p.producer.ProduceSync(ctx, record).FirstErr(); err != nil {

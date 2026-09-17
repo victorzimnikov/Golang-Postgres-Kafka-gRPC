@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -31,24 +30,12 @@ func TestOrderPublisherPublish(t *testing.T) {
 		"orders.created.v1",
 	)
 
-	occurredAt := time.Date(
-		2026,
-		time.September,
-		15,
-		12,
-		0,
-		0,
-		0,
-		time.UTC,
-	)
-
 	value := []byte(`{"event_id":"event-1"}`)
 
 	if err := publisher.Publish(
 		context.Background(),
 		"order-1",
 		value,
-		occurredAt,
 	); err != nil {
 		t.Fatalf("Publish() unexpected error: %v", err)
 	}
@@ -86,11 +73,10 @@ func TestOrderPublisherPublish(t *testing.T) {
 		)
 	}
 
-	if !record.Timestamp.Equal(occurredAt) {
+	if !record.Timestamp.IsZero() {
 		t.Errorf(
-			"record timestamp = %v, want %v",
+			"record timestamp = %v, want zero value",
 			record.Timestamp,
-			occurredAt,
 		)
 	}
 }
@@ -116,7 +102,6 @@ func TestPublisherPublishReturnsProducerError(t *testing.T) {
 		context.Background(),
 		"order-1",
 		[]byte(`{"event_id":"event-1"}`),
-		time.Now(),
 	)
 
 	if !errors.Is(err, producerErr) {

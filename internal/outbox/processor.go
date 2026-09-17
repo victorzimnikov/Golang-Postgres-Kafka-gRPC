@@ -28,9 +28,8 @@ type Repository interface {
 type Publisher interface {
 	Publish(
 		ctx context.Context,
-		Key string,
+		key string,
 		value []byte,
-		occurredAt time.Time,
 	) error
 }
 
@@ -57,7 +56,6 @@ func (p *Processor) ProcessNext(ctx context.Context) (bool, error) {
 				ctx,
 				event.AggregateID,
 				event.Payload,
-				event.OccurredAt,
 			)
 			if err != nil {
 				return fmt.Errorf(

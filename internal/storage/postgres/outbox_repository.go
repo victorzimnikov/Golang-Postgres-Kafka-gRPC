@@ -13,8 +13,8 @@ type OutboxRepository struct {
 	db DBTX
 }
 
-func NewOutboxRepository(db DBTX) OutboxRepository {
-	return OutboxRepository{
+func NewOutboxRepository(db DBTX) *OutboxRepository {
+	return &OutboxRepository{
 		db: db,
 	}
 }
