@@ -78,6 +78,25 @@ services:
       retries: 10
       start_period: 20s
 
+  kafka-init:
+    image: apache/kafka:4.3.1
+    command:
+      - /opt/kafka/bin/kafka-topics.sh
+      - --bootstrap-server
+      - kafka:19092
+      - --create
+      - --if-not-exists
+      - --topic
+      - ${KAFKA_ORDER_CREATED_TOPIC}
+      - --partitions
+      - "3"
+      - --replication-factor
+      - "1"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+
   order-service:
     <<: *go-service
     command:
@@ -102,8 +121,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   order-consumer:
     <<: *go-service
@@ -117,8 +136,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-      kafka:
-        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:
