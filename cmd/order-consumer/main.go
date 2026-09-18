@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
+	appconfig "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/config"
 	"github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/inbox"
 	kafkamessaging "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/messaging/kafka"
 	postgresstorage "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/storage/postgres"
@@ -26,24 +27,9 @@ func main() {
 }
 
 func run() error {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		return fmt.Errorf("DATABASE_URL is not set")
-	}
-
-	brokersValue := os.Getenv("KAFKA_BROKERS")
-	if brokersValue == "" {
-		return fmt.Errorf("KAFKA_BROKERS is not set")
-	}
-
-	topic := os.Getenv("KAFKA_ORDER_CREATED_TOPIC")
-	if topic == "" {
-		return fmt.Errorf("KAFKA_ORDER_CREATED_TOPIC is not set")
-	}
-
-	group := os.Getenv("KAFKA_CONSUMER_GROUP")
-	if group == "" {
-		return fmt.Errorf("KAFKA_CONSUMER_GROUP is not set")
+	config, err := appconfig.LoadConsumerConfig()
+	if err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(
@@ -56,7 +42,7 @@ func run() error {
 	startupCtx, cancelStartup := context.WithTimeout(ctx, startupTimeout)
 	defer cancelStartup()
 
-	pool, err := pgxpool.New(startupCtx, databaseURL)
+	pool, err := pgxpool.New(startupCtx, config.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("create PostgreSQL connection pool: %w", err)
 	}
@@ -67,9 +53,9 @@ func run() error {
 	}
 
 	client, err := kgo.NewClient(
-		kgo.SeedBrokers(strings.Split(brokersValue, ",")...),
-		kgo.ConsumeTopics(topic),
-		kgo.ConsumerGroup(group),
+		kgo.SeedBrokers(strings.Split(config.KafkaBrokers, ",")...),
+		kgo.ConsumeTopics(config.KafkaOrderCreatedTopic),
+		kgo.ConsumerGroup(config.KafkaConsumerGroup),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 		kgo.DisableAutoCommit(),
 		kgo.BlockRebalanceOnPoll(),
@@ -90,8 +76,8 @@ func run() error {
 
 	log.Printf(
 		"consumer started: topic=%s group=%s",
-		topic,
-		group,
+		config.KafkaOrderCreatedTopic,
+		config.KafkaConsumerGroup,
 	)
 
 	for {
@@ -116,7 +102,7 @@ func run() error {
 		}
 
 		for _, record := range fetches.Records() {
-			if _, err := handleRecord(ctx, group, processedEvents, record); err != nil {
+			if _, err := handleRecord(ctx, config.KafkaConsumerGroup, processedEvents, record); err != nil {
 				client.AllowRebalance()
 
 				return fmt.Errorf(

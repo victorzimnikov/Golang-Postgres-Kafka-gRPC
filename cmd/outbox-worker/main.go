@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
+	appconfig "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/config"
 	kafkamessaging "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/messaging/kafka"
 	"github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/outbox"
 	postgresstorage "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/storage/postgres"
@@ -31,24 +32,14 @@ func main() {
 	)
 	defer stop()
 
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Fatal("DATABASE_URL is not set")
-	}
-
-	kafkaBrokers := os.Getenv("KAFKA_BROKERS")
-	if kafkaBrokers == "" {
-		log.Fatal("KAFKA_BROKERS is not set")
-	}
-
-	kafkaTopic := os.Getenv("KAFKA_ORDER_CREATED_TOPIC")
-	if kafkaTopic == "" {
-		log.Fatal("KAFKA_ORDER_CREATED_TOPIC is not set")
+	config, err := appconfig.LoadOutboxWorkerConfig()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	startupCtx, cancelStartup := context.WithTimeout(ctx, connectTimeout)
 
-	pool, err := pgxpool.New(startupCtx, databaseURL)
+	pool, err := pgxpool.New(startupCtx, config.DatabaseURL)
 	if err != nil {
 		cancelStartup()
 		log.Fatalf("create PostgreSQL connection pool: %v", err)
@@ -60,7 +51,7 @@ func main() {
 	}
 
 	kafkaClient, err := kgo.NewClient(
-		kgo.SeedBrokers(strings.Split(kafkaBrokers, ",")...),
+		kgo.SeedBrokers(strings.Split(config.KafkaBrokers, ",")...),
 		kgo.RecordDeliveryTimeout(recordDeliveryTimeout),
 	)
 	if err != nil {
@@ -80,7 +71,7 @@ func main() {
 
 	publisher := kafkamessaging.NewPublisher(
 		kafkaClient,
-		kafkaTopic,
+		config.KafkaOrderCreatedTopic,
 	)
 
 	processor := outbox.NewProcessor(
@@ -90,7 +81,7 @@ func main() {
 
 	log.Printf(
 		"outbox worker started for topic %v",
-		kafkaTopic,
+		config.KafkaOrderCreatedTopic,
 	)
 
 	for {

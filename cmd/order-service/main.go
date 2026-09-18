@@ -4,12 +4,12 @@ import (
 	"context"
 	"log"
 	"net"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	orderv1 "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/api/order/v1"
+	appconfig "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/config"
 	domainorder "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/order"
 	postgresstorage "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/storage/postgres"
 	grpctransport "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/transport/grpc"
@@ -22,22 +22,17 @@ const (
 )
 
 func main() {
-	grpcPort := os.Getenv("GRPC_PORT")
-	if grpcPort == "" {
-		log.Fatal("GRPC_PORT is not set")
+	config, err := appconfig.LoadOrderServiceConfig()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	grpcAddress := ":" + grpcPort
-
-	databaseUrl := os.Getenv("DATABASE_URL")
-	if databaseUrl == "" {
-		log.Fatal("DATABASE_URL is not set")
-	}
+	grpcAddress := ":" + config.GRPCPort
 
 	connectCtx, cancel := context.WithTimeout(context.Background(), databaseConnectTimeout)
 	defer cancel()
 
-	pool, err := pgxpool.New(connectCtx, databaseUrl)
+	pool, err := pgxpool.New(connectCtx, config.DatabaseURL)
 	if err != nil {
 		log.Fatalf("create PostgreSQL connection pool: %v", err)
 	}
