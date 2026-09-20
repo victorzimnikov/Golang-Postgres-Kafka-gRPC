@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/outbox"
+	"github.com/victorzimnikov/pgqb"
 )
 
 type OutboxRepository struct {
@@ -32,33 +33,33 @@ func (r *OutboxRepository) ProcessNext(
 		_ = tx.Rollback(ctx)
 	}()
 
-	build := NewBuilder(ctx, tx)
+	builder := pgqb.NewBuilder(ctx, tx)
 
-	idField, err := CastField("id", TypeText)
+	idField, err := pgqb.CastField("id", pgqb.TypeText)
 	if err != nil {
 		return false, err
 	}
 
-	aggregateIdField, err := CastField("aggregate_id", TypeText)
+	aggregateIdField, err := pgqb.CastField("aggregate_id", pgqb.TypeText)
 	if err != nil {
 		return false, err
 	}
 
 	var event outbox.Event
 
-	err = build.
+	err = builder.
 		Select(
 			"outbox_events",
 			idField,
 			aggregateIdField,
-			Column("payload"),
-			Column("occurred_at"),
+			pgqb.Column("payload"),
+			pgqb.Column("occurred_at"),
 		).
 		WhereNull("published_at").
-		OrderBy("occurred_at", OrderAsc).
-		OrderBy("id", OrderAsc).
+		OrderBy("occurred_at", pgqb.OrderAsc).
+		OrderBy("id", pgqb.OrderAsc).
 		Limit(1).
-		Lock(LockModeUpdate).
+		Lock(pgqb.LockModeUpdate).
 		SkipLocked().
 		Exec(
 			&event.ID,
@@ -86,16 +87,14 @@ func (r *OutboxRepository) ProcessNext(
 		return true, fmt.Errorf("handle outbox event %s: %w", event.ID, err)
 	}
 
-	const markPublishedQuery = `
-		UPDATE outbox_events
-		SET
-			published_at = clock_timestamp(),
-			attempts = attempts + 1,
-			last_error = NULL
-		WHERE id = $1
-	`
+	updateBuilder := builder.
+		Update("outbox_events").
+		SetExpr("published_at", pgqb.ClockTimestamp()).
+		SetIncrement("attempts", 1).
+		Set("last_error", nil).
+		Where("id", event.ID)
 
-	if _, err := tx.Exec(ctx, markPublishedQuery, event.ID); err != nil {
+	if _, err := updateBuilder.Exec(); err != nil {
 		return true, fmt.Errorf("mark outbox event published: %w", err)
 	}
 
@@ -112,19 +111,14 @@ func recordFailure(
 	eventID string,
 	handlerErr error,
 ) error {
-	const query = `
-		UPDATE outbox_events
-		SET
-			attempts = attempts + 1,
-			last_error = $2
-		WHERE id = $1
-	`
-	if _, err := tx.Exec(
-		ctx,
-		query,
-		eventID,
-		handlerErr.Error(),
-	); err != nil {
+	updateBuilder := pgqb.
+		NewBuilder(ctx, tx).
+		Update("outbox_events").
+		SetIncrement("attempts", 1).
+		Set("last_error", handlerErr.Error()).
+		Where("id", eventID)
+
+	if _, err := updateBuilder.Exec(); err != nil {
 		return fmt.Errorf("update failed outbox event: %w", err)
 	}
 
