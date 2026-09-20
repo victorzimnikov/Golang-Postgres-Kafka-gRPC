@@ -32,27 +32,41 @@ func (r *OutboxRepository) ProcessNext(
 		_ = tx.Rollback(ctx)
 	}()
 
-	const selectQuery = `
-		SELECT
-			id::text,
-			aggregate_id::text,
-			payload,
-			occurred_at
-		FROM outbox_events
-		WHERE published_at IS NULL
-		ORDER BY occurred_at, id
-		LIMIT 1
-		FOR UPDATE SKIP LOCKED
-	`
+	build := NewBuilder(ctx, tx)
+
+	idField, err := CastField("id", TypeText)
+	if err != nil {
+		return false, err
+	}
+
+	aggregateIdField, err := CastField("aggregate_id", TypeText)
+	if err != nil {
+		return false, err
+	}
 
 	var event outbox.Event
 
-	err = tx.QueryRow(ctx, selectQuery).Scan(
-		&event.ID,
-		&event.AggregateID,
-		&event.Payload,
-		&event.OccurredAt,
-	)
+	err = build.
+		Select(
+			"outbox_events",
+			idField,
+			aggregateIdField,
+			Column("payload"),
+			Column("occurred_at"),
+		).
+		WhereNull("published_at").
+		OrderBy("occurred_at", OrderAsc).
+		OrderBy("id", OrderAsc).
+		Limit(1).
+		Lock(LockModeUpdate).
+		SkipLocked().
+		Exec(
+			&event.ID,
+			&event.AggregateID,
+			&event.Payload,
+			&event.OccurredAt,
+		)
+
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
