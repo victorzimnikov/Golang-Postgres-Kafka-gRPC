@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/inbox"
+	"github.com/victorzimnikov/pgqb"
 )
 
 func TestProcessedEventRepositoryTryMarkProcessed(
@@ -100,24 +101,21 @@ func TestProcessedEventRepositoryTryMarkProcessed(
 		offset    int64
 	)
 
-	err = tx.QueryRow(
-		ctx,
-		`
-			SELECT
-				topic,
-				partition,
-				offset_value
-			FROM processed_events
-			WHERE consumer_group = $1
-			  AND event_id = $2
-		`,
-		message.ConsumerGroup,
-		message.EventID,
-	).Scan(
-		&topic,
-		&partition,
-		&offset,
-	)
+	err = pgqb.
+		NewBuilder(ctx, tx).
+		Select(
+			"processed_events",
+			pgqb.Column("topic"),
+			pgqb.Column("partition"),
+			pgqb.Column("offset_value"),
+		).
+		Where("consumer_group", message.ConsumerGroup).
+		Where("event_id", message.EventID).
+		Exec(
+			&topic,
+			&partition,
+			&offset,
+		)
 	if err != nil {
 		t.Fatalf("select processed event: %v", err)
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	domainorder "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/order"
+	"github.com/victorzimnikov/pgqb"
 )
 
 func TestOrderRepositorySaveWithEvent(t *testing.T) {
@@ -117,15 +118,11 @@ func TestOrderRepositorySaveWithEvent(t *testing.T) {
 
 	var payload []byte
 
-	err = tx.QueryRow(
-		ctx,
-		`
-			SELECT payload
-			FROM outbox_events
-			WHERE id = $1
-		`,
-		wantEvent.EventID,
-	).Scan(&payload)
+	err = pgqb.
+		NewBuilder(ctx, tx).
+		Select("outbox_events", pgqb.Column("payload")).
+		Where("id", wantEvent.EventID).
+		Exec(&payload)
 	if err != nil {
 		t.Fatalf("select outbox event: %v", err)
 	}

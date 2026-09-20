@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	domainorder "github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/order"
+	"github.com/victorzimnikov/pgqb"
 )
 
 type DBTX interface {
@@ -117,29 +118,35 @@ func (r *OrderRepository) GetByID(
 	ctx context.Context,
 	id string,
 ) (domainorder.Order, error) {
-	const query = `
-		SELECT
-			id::text,
-			customer_id,
-			amount_kopecks,
-			status,
-			created_at
-		FROM orders
-		WHERE id = $1
-	`
-
 	var (
 		order  domainorder.Order
 		status string
 	)
 
-	err := r.db.QueryRow(ctx, query, id).Scan(
-		&order.ID,
-		&order.CustomerID,
-		&order.AmountKopecks,
-		&status,
-		&order.CreatedAt,
-	)
+	idField, err := pgqb.CastField("id", pgqb.TypeText)
+	if err != nil {
+		return domainorder.Order{}, err
+	}
+
+	err = pgqb.
+		NewBuilder(ctx, r.db).
+		Select(
+			"orders",
+			idField,
+			pgqb.Column("customer_id"),
+			pgqb.Column("amount_kopecks"),
+			pgqb.Column("status"),
+			pgqb.Column("created_at"),
+		).
+		Where("id", id).
+		Exec(
+			&order.ID,
+			&order.CustomerID,
+			&order.AmountKopecks,
+			&status,
+			&order.CreatedAt,
+		)
+
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domainorder.Order{}, domainorder.ErrOrderNotFound
 	}

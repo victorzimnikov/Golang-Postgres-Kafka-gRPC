@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/victorzimnikov/Golang-Postgres-Kafka-gRPC/internal/outbox"
+	"github.com/victorzimnikov/pgqb"
 )
 
 func TestOutboxRepositoryProcessNext(t *testing.T) {
@@ -136,22 +137,19 @@ func TestOutboxRepositoryProcessNext(t *testing.T) {
 		lastError *string
 	)
 
-	err = tx.QueryRow(
-		ctx,
-		`
-			SELECT
-				published_at IS NOT NULL,
-				attempts,
-				last_error
-			FROM outbox_events
-			WHERE id = $1
-		`,
-		eventID,
-	).Scan(
-		&published,
-		&attempts,
-		&lastError,
-	)
+	err = pgqb.
+		NewBuilder(ctx, tx).
+		Select(
+			"outbox_events",
+			pgqb.ColumnNotNull("published_at"),
+			pgqb.Column("attempts"),
+			pgqb.Column("last_error"),
+		).
+		Where("id", eventID).
+		Exec(
+			&published,
+			&attempts,
+			&lastError)
 	if err != nil {
 		t.Fatalf("select processed outbox event: %v", err)
 	}
@@ -256,22 +254,19 @@ func TestOutboxRepositoryRecordsHandlerError(t *testing.T) {
 		lastError string
 	)
 
-	err = tx.QueryRow(
-		ctx,
-		`
-			SELECT
-				published_at IS NOT NULL,
-				attempts,
-				last_error
-			FROM outbox_events
-			WHERE id = $1
-		`,
-		eventID,
-	).Scan(
-		&published,
-		&attempts,
-		&lastError,
-	)
+	err = pgqb.
+		NewBuilder(ctx, tx).
+		Select(
+			"outbox_events",
+			pgqb.ColumnNotNull("published_at"),
+			pgqb.Column("attempts"),
+			pgqb.Column("last_error"),
+		).
+		Where("id", eventID).
+		Exec(
+			&published,
+			&attempts,
+			&lastError)
 	if err != nil {
 		t.Fatalf("select failed outbox event: %v", err)
 	}
