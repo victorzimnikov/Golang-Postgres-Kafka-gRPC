@@ -51,58 +51,52 @@ func (r *OrderRepository) SaveWithEvent(
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 
+	builder := pgqb.NewBuilder(ctx, tx)
+
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
 
-	const insertOrderQuery = `
-		INSERT INTO orders (
-			id,
-			customer_id,
-			amount_kopecks,
-			status,
-			created_at
+	_, err = builder.
+		Insert(
+			"orders",
+			"id",
+			"customer_id",
+			"amount_kopecks",
+			"status",
+			"created_at",
+		).
+		Exec(
+			order.ID,
+			order.CustomerID,
+			order.AmountKopecks,
+			order.Status,
+			order.CreatedAt,
 		)
-		VALUES ($1, $2, $3, $4, $5)
-	`
-
-	_, err = tx.Exec(
-		ctx,
-		insertOrderQuery,
-		order.ID,
-		order.CustomerID,
-		order.AmountKopecks,
-		order.Status,
-		order.CreatedAt,
-	)
 	if err != nil {
 		return fmt.Errorf("insert order: %w", err)
 	}
 
-	const insertEventQuery = `
-		INSERT INTO outbox_events (
-			id,
-			aggregate_type,
-			aggregate_id,
-			event_type,
-			event_version,
+	_, err = builder.
+		Insert(
+			"outbox_events",
+			"id",
+			"aggregate_type",
+			"aggregate_id",
+			"event_type",
+			"event_version",
+			"payload",
+			"occurred_at",
+		).
+		Exec(
+			event.EventID,
+			"order",
+			order.ID,
+			event.EventType,
+			event.EventVersion,
 			payload,
-			occurred_at
+			event.OccurredAt,
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`
-
-	_, err = tx.Exec(
-		ctx,
-		insertEventQuery,
-		event.EventID,
-		"order",
-		order.ID,
-		event.EventType,
-		event.EventVersion,
-		payload,
-		event.OccurredAt,
-	)
 	if err != nil {
 		return fmt.Errorf("insert outbox event: %w", err)
 	}

@@ -62,28 +62,28 @@ func TestOutboxRepositoryProcessNext(t *testing.T) {
 	const eventID = "00000000-0000-4000-8000-000000000101"
 	const aggregateID = "00000000-0000-4000-8000-000000000001"
 
-	_, err = tx.Exec(
-		ctx,
-		`
-			INSERT INTO outbox_events (
-				id,
-				aggregate_type,
-				aggregate_id,
-				event_type,
-				event_version,
-				payload,
-				occurred_at
-			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`,
-		eventID,
-		"order",
-		aggregateID,
-		"order.created",
-		1,
-		[]byte(`{"event_id":"event-1"}`),
-		occurredAt,
-	)
+	builder := pgqb.NewBuilder(ctx, tx)
+
+	_, err = builder.
+		Insert(
+			"outbox_events",
+			"id",
+			"aggregate_type",
+			"aggregate_id",
+			"event_type",
+			"event_version",
+			"payload",
+			"occurred_at",
+		).
+		Exec(
+			eventID,
+			"order",
+			aggregateID,
+			"order.created",
+			1,
+			[]byte(`{"event_id":"event-1"}`),
+			occurredAt,
+		)
 	if err != nil {
 		t.Fatalf("insert outbox event: %v", err)
 	}
@@ -137,8 +137,7 @@ func TestOutboxRepositoryProcessNext(t *testing.T) {
 		lastError *string
 	)
 
-	err = pgqb.
-		NewBuilder(ctx, tx).
+	err = builder.
 		Select(
 			"outbox_events",
 			pgqb.ColumnNotNull("published_at"),
@@ -200,28 +199,28 @@ func TestOutboxRepositoryRecordsHandlerError(t *testing.T) {
 
 	const eventID = "00000000-0000-4000-8000-000000000102"
 
-	_, err = tx.Exec(
-		ctx,
-		`
-			INSERT INTO outbox_events (
-				id,
-				aggregate_type,
-				aggregate_id,
-				event_type,
-				event_version,
-				payload,
-				occurred_at
-			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`,
-		eventID,
-		"order",
-		"00000000-0000-4000-8000-000000000002",
-		"order.created",
-		1,
-		[]byte(`{"event_id":"event-2"}`),
-		time.Now().UTC(),
-	)
+	builder := pgqb.NewBuilder(ctx, tx)
+
+	_, err = builder.
+		Insert(
+			"outbox_events",
+			"id",
+			"aggregate_type",
+			"aggregate_id",
+			"event_type",
+			"event_version",
+			"payload",
+			"occurred_at",
+		).
+		Exec(
+			eventID,
+			"order",
+			"00000000-0000-4000-8000-000000000002",
+			"order.created",
+			1,
+			[]byte(`{"event_id":"event-2"}`),
+			time.Now().UTC(),
+		)
 	if err != nil {
 		t.Fatalf("insert outbox event: %v", err)
 	}
@@ -254,8 +253,7 @@ func TestOutboxRepositoryRecordsHandlerError(t *testing.T) {
 		lastError string
 	)
 
-	err = pgqb.
-		NewBuilder(ctx, tx).
+	err = builder.
 		Select(
 			"outbox_events",
 			pgqb.ColumnNotNull("published_at"),
